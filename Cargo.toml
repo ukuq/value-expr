@@ -5,6 +5,7 @@ edition = "2021"
 authors = ["ukuq"]
 description = "easy expression"
 repository = "https://github.com/ukuq/value-expr"
+license = "MIT"
 
 [dependencies]
 syn = "2.0.99"
