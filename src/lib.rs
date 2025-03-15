@@ -713,6 +713,9 @@ mod context {
         fn ctx(&mut self) -> &mut ContextHelper;
         fn ctx_ref(&self) -> &ContextHelper;
         fn ctx_log(&self, msg: &str);
+        fn ctx_call(&mut self, _func: &str, _values: &Vec<Value>) -> Option<i32> {
+            None
+        }
         #[doc(hidden)]
         fn next_key(&mut self, key: i32) -> i32 {
             if key > 0 {
@@ -892,6 +895,9 @@ mod context {
     }
     impl<T: IContextHelper> IContext for T {
         fn call(&mut self, func: &str, values: &Vec<Value>) -> i32 {
+            if let Some(res) = self.ctx_call(func, values) {
+                return res;
+            }
             match func {
                 "_if" => self._if(values),
                 "_fn" => self._fn(values),
