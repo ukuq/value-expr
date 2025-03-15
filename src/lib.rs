@@ -1,9 +1,176 @@
-#[derive(Clone)]
+//! Value Expr
+//!
+//! ## DSL
+//!
+//! ```dsl
+//! Value:
+//!     i32
+//!     | Unary
+//!     | Binary
+//!     | Assign
+//!     | Paren
+//!     | FuncLike
+//!     | Ident
+//! Unary:
+//!     - Value
+//!     | ! Value
+//! Binary:
+//!     Value + Value
+//!     | Value - Value
+//!     | Value * Value
+//!     | Value / Value
+//!     | Value % Value
+//!     | Value ^ Value
+//!     | Value & Value
+//!     | Value | Value
+//!     | Value << Value
+//!     | Value >> Value
+//!     | Value == Value
+//!     | Value != Value
+//!     | Value > Value
+//!     | Value < Value
+//!     | Value >= Value
+//!     | Value <= Value
+//!     | Value && Value
+//!     | Value || Value
+//! Assign:
+//!     Ident = Value
+//!     | Ident += Value
+//!     | Ident -= Value
+//!     | Ident *= Value
+//!     | Ident /= Value
+//!     | Ident %= Value
+//!     | Ident ^= Value
+//!     | Ident &= Value
+//!     | Ident |= Value
+//!     | Ident <<= Value
+//!     | Ident >>= Value
+//! Paren:
+//!     ( Values )
+//! FuncLike:
+//!     Ident ( Values )
+//! Values:
+//!     <nothing>
+//!     | ValuesNext
+//! ValuesNext:
+//!     Value
+//!     | Value , ValuesNext
+//! Ident:
+//!     <the rust lang ident>
+//! ```
+//!
+//! ## Binary
+//!
+//! 运算优先级从低到高如下，同一优先级时按照顺序左结合运算。
+//!
+//! 在混合使用时，大于0的值被认为是true，否则为false，true对应的数值为1，false为0。
+//!
+//! ```x
+//! 逻辑或	||
+//! 逻辑与	&&
+//! 数值比较	== != > < >= <=
+//! 按位或	|
+//! 按位异或	^
+//! 按位与	&
+//! 移位	<< >>
+//! 数值运算	+-
+//! 数值运算	*/%
+//! ```
+//!
+//! ## FuncLike
+//!
+//! 类函数，与普通函数不同的是，它允许延迟计算。命名上，建议所有含延迟的函数均以_开头，普通函数以英文字母开头。
+//!
+//! ### _if 条件判断
+//!
+//! 计算第一个表达式为判断条件，为真时执行第二个表达式，否则执行第三个表达式，返回前依次执行剩余表达式。
+//!
+//! ```x
+//! _if() =: 0
+//! _if(a()) =: if a() { 0 } else { 0 }
+//! _if(a(),b()) =: if a() { b() } else { 0 }
+//! _if(a(),b(),c()) =: if a() { b() } else{ c() }
+//! _if(a(),b(),c(),d()...) =: { let t = if a() { b() } else { c() }; d()...; t }
+//! ```
+//!
+//! ### _fn 函数定义
+//!
+//! 取第一个参数为函数标识，第二个参数为函数体，剩余参数为函数参数，函数体中可以使用函数参数作为变量读写，返回值为函数ID。
+//!
+//! 若函数标识为Ident，则定义为函数名，否则为匿名函数计算其值作为函数ID。
+//!
+//! ```x
+//! _fn(add,a+b,a,b) =: fn add(a,b) { a+b }
+//! _if(1,a+b,a,b) =: |a,b|a+b
+//! ```
+//!
+//! ### _call 函数调用
+//!
+//! 取第一个参数值为函数标识，剩余参数为函数参数，返回值为函数执行结果。
+//!
+//! 若函数标识为Ident，则取对应函数ID，否则计算其值作为函数ID。
+//!
+//! ```x
+//! _fn(add,a+b,a,b)
+//! _call(add,1,2) =: add(1,2)
+//! _if(1,a+b,a,b)
+//! _call(2-1,1,2) =: 1+2
+//! ```
+//!
+//! ### _call_inline 匿名函数
+//!
+//! 取第一个参数值为函数体，剩余参数为函数参数，返回值为函数执行结果。
+//!
+//! ```x
+//! _call_inline(arg0+arg1,1,2)
+//! ```
+//!
+//! ### _scope 变量域
+//!
+//! 创建一个变量域，类似fork机制，变量域内可写入当前域，可读取当前域或父级域或父父级域等等，默认0，依次计算每个参数，取最后一个作为返回值，默认0。
+//!
+//! _call、_call_inline 函数调用同样会创建一个变量域。其余场景不会创建变量域。
+//!
+//! ```x
+//! _scope(a=100,_assert(a==100)),
+//! _scope(a=100,_scope(_assert(a==100))),
+//! _scope(a=100,a=200,_assert(a==200)),
+//! _scope(a=100,_scope(a=200),_assert(a==100))
+//! _fn(f1,_assert(a==0)),
+//! _scope(a=100,_fn(f1,_assert(a==100))),
+//! _scope(a=100,_fn(f1,(a=200,_assert(a==200))),_assert(a==100))
+//! ```
+//!
+//! ### _while 循环
+//!
+//! 取第一个参数值为循环条件，循环依次计算每个参数，取最后一次循环最后一个值作为返回值。
+//!
+//! ```x
+//! (
+//! i=10,
+//! _while(i<20,
+//!     _if(i%2==0,_log(i_is,i)),
+//!     i+=1,
+//!     i
+//! )
+//! )
+//! ```
+//!
+//! ### _log、_debug、_assert 调试工具
+//!
+//! _log 日志打印，保留第一个参数，打印剩余参数的值，返回最后一个值的结果。
+//!
+//! _debug 打印内部数据状态，参数、返回值无意义。
+//!
+//! _assert 断言第一个参数，剩余参数、返回值无意义。
+//!
+
+#[derive(Debug, Clone)]
 pub enum UnOp {
     Not,
     Neg,
 }
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum BinOp {
     Add,
     Sub,
@@ -24,7 +191,7 @@ pub enum BinOp {
     Ge,
     Gt,
 }
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum AssignOp {
     Assign,
     AddAssign,
@@ -38,23 +205,23 @@ pub enum AssignOp {
     ShlOrAssign,
     ShrOrAssign,
 }
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum Value {
-    // 1
+    /// 1
     Integer(i32),
-    // -a
+    /// -a
     Unary(UnOp, Box<Value>),
-    // a+b
+    /// a+b
     Binary(BinOp, Box<Value>, Box<Value>),
-    // (a)
+    /// (a)
     Paren(Vec<Value>),
-    // a(b,c)
+    /// a(b,c)
     FuncLike(String, Vec<Value>),
-    // a
+    /// a
     Ident(String),
-    // a=1
+    /// a=1
     Assign(AssignOp, String, Box<Value>),
-    // copy
+    /// << inner use >>
     Copy(Arc<Value>),
 }
 
@@ -318,7 +485,7 @@ mod valuer {
     pub trait IContext {
         fn call(&mut self, func: &str, values: &Vec<Value>) -> i32;
         fn ident_get(&self, ident: &str) -> i32;
-        fn ident_set(&mut self, ident: &str, value: i32) -> i32;
+        fn ident_set(&mut self, ident: &str, value: i32);
     }
 
     impl UnOp {
@@ -375,7 +542,7 @@ mod valuer {
         }
     }
 
-    impl<T: IContext, V: IValue<T>> IValue<T> for Vec<V> {
+    impl<T: IContext, V: IValue<T>> IValue<T> for [V] {
         fn to_i32(&self, ctx: &mut T) -> i32 {
             let mut last = 0;
             for value in self.iter() {
@@ -415,7 +582,7 @@ mod valuer {
             unreachable!()
         }
 
-        fn ident_set(&mut self, _ident: &str, _value: i32) -> i32 {
+        fn ident_set(&mut self, _ident: &str, _value: i32) {
             unreachable!()
         }
     }
@@ -494,7 +661,7 @@ mod valuer {
                     unreachable!()
                 }
 
-                fn ident_set(&mut self, _ident: &str, _value: i32) -> i32 {
+                fn ident_set(&mut self, _ident: &str, _value: i32) {
                     unreachable!()
                 }
             }
@@ -515,15 +682,22 @@ mod context {
     use std::collections::HashMap;
     use std::sync::Arc;
 
+    #[derive(Debug)]
     pub struct FnDef {
         #[allow(dead_code)]
         pub fid: i32,
         pub func: Value,
         pub params: HashMap<String, i32>,
     }
+    #[derive(Debug)]
     pub struct FnFrame {
         pub func: Arc<FnDef>,
         pub args: Vec<i32>,
+    }
+    #[derive(Debug)]
+    pub struct VarFrame {
+        pub age: i32,
+        pub value: i32,
     }
     #[derive(Default)]
     pub struct ContextHelper {
@@ -533,11 +707,13 @@ mod context {
         fn_map: HashMap<i32, Arc<FnDef>>,
         fn_name: HashMap<String, i32>,
         fn_stack: Vec<FnFrame>,
+        var_stack: HashMap<String, Vec<VarFrame>>,
     }
     pub trait IContextHelper: Sized {
         fn ctx(&mut self) -> &mut ContextHelper;
         fn ctx_ref(&self) -> &ContextHelper;
-        fn ctx_log(&self, msg: String);
+        fn ctx_log(&self, msg: &str);
+        #[doc(hidden)]
         fn next_key(&mut self, key: i32) -> i32 {
             if key > 0 {
                 key
@@ -547,11 +723,33 @@ mod context {
                 ctx.pointer
             }
         }
+        #[doc(hidden)]
+        fn scope_begin(&mut self) -> i32 {
+            let ctx = self.ctx();
+            let point = ctx.pointer;
+            ctx.pointer += 1;
+            point
+        }
+        #[doc(hidden)]
+        fn scope_end(&mut self, point: i32) {
+            self.ctx().pointer = point;
+            for (_, frames) in &mut self.ctx().var_stack {
+                while let Some(frame) = frames.last_mut() {
+                    if frame.age > point {
+                        frames.pop();
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+        #[doc(hidden)]
         fn array_def(&mut self, key: i32, elements: Vec<i32>) -> i32 {
             let key = self.next_key(key);
             self.ctx().array_map.insert(key, elements);
             key
         }
+        #[doc(hidden)]
         fn array_get(&self, key: i32) -> &Vec<i32> {
             let ctx = self.ctx_ref();
             match ctx.array_map.get(&key) {
@@ -559,6 +757,7 @@ mod context {
                 None => &ctx.array0,
             }
         }
+        #[doc(hidden)]
         fn fn_def(&mut self, fid: i32, func: &Value, params: HashMap<String, i32>) -> i32 {
             let fid = self.next_key(fid);
             self.ctx().fn_map.insert(
@@ -571,7 +770,9 @@ mod context {
             );
             fid
         }
+        #[doc(hidden)]
         fn fn_call(&mut self, fid: i32, args: Vec<i32>) -> i32 {
+            let point = self.scope_begin();
             let func = self.ctx().fn_map.get(&fid).unwrap().clone();
             self.ctx().fn_stack.push(FnFrame {
                 func: func.clone(),
@@ -579,12 +780,21 @@ mod context {
             });
             let res = func.func.to_i32(self);
             self.ctx().fn_stack.pop();
+            self.scope_end(point);
             res
         }
+        #[doc(hidden)]
         fn _if(&mut self, args: &Vec<Value>) -> i32 {
             match args.len() {
                 0 => 0,
                 1 => {
+                    if i2b!(args[0].to_i32(self)) {
+                        0
+                    } else {
+                        0
+                    }
+                }
+                2 => {
                     if i2b!(args[0].to_i32(self)) {
                         args[1].to_i32(self)
                     } else {
@@ -597,13 +807,12 @@ mod context {
                     } else {
                         args[2].to_i32(self)
                     };
-                    for idx in 3..args.len() {
-                        args[idx].to_i32(self);
-                    }
+                    args[3..].to_i32(self);
                     res
                 }
             }
         }
+        #[doc(hidden)]
         fn _fn(&mut self, args: &Vec<Value>) -> i32 {
             let fid = if let Value::Ident(ident) = &args[0] {
                 let fid = self.next_key(0);
@@ -621,45 +830,64 @@ mod context {
             self.fn_def(fid, &args[1], params);
             fid
         }
+        #[doc(hidden)]
         fn _call(&mut self, args: &Vec<Value>) -> i32 {
             let fid = if let Value::Ident(ident) = &args[0] {
                 self.ctx().fn_name.get(ident).map(|e| *e).unwrap()
             } else {
                 args[0].to_i32(self)
             };
-            let args: Vec<_> = args.iter().skip(1).map(|e| e.to_i32(self)).collect();
+            let args = args[1..].to_i32_vec(self);
             self.fn_call(fid, args)
         }
+        #[doc(hidden)]
         fn _call_inline(&mut self, args: &Vec<Value>) -> i32 {
             match args.len() {
                 0 => 0,
                 1 => args[0].to_i32(self),
                 _ => {
                     let fid = self.fn_def(0, &args[0], HashMap::new());
-                    let args: Vec<_> = args.iter().skip(1).map(|e| e.to_i32(self)).collect();
+                    let args = args[1..].to_i32_vec(self);
                     self.fn_call(fid, args)
                 }
             }
         }
+        #[doc(hidden)]
         fn _scope(&mut self, args: &Vec<Value>) -> i32 {
-            let point = self.ctx().pointer;
-            let res = args.iter().map(|e| e.to_i32(self)).last().unwrap_or(0);
-            self.ctx().pointer = point;
+            let point = self.scope_begin();
+            let res = args.to_i32(self);
+            self.scope_end(point);
             res
         }
+        #[doc(hidden)]
+        fn _while(&mut self, args: &Vec<Value>) -> i32 {
+            let mut res = 0;
+            while i2b!(args[0].to_i32(self)) {
+                res = args[1..].to_i32(self);
+            }
+            res
+        }
+        #[doc(hidden)]
         fn _log(&mut self, args: &Vec<Value>) -> i32 {
             let msg = if let Some(Value::Ident(ident)) = args.first() {
                 ident
             } else {
                 "<<value>>"
             };
-            let args: Vec<_> = args.iter().skip(1).map(|e| e.to_i32(self)).collect();
-            self.ctx_log(format!("{} {:?}", msg, args));
+            let args = args[1..].to_i32_vec(self);
+            self.ctx_log(&format!("{} {:?}", msg, args));
             args.last().map(|e| *e).unwrap_or(0)
         }
+        #[doc(hidden)]
         fn _assert(&mut self, args: &Vec<Value>) -> i32 {
             assert!(i2b!(args[0].to_i32(self)));
             1
+        }
+        #[doc(hidden)]
+        fn _debug(&mut self, _args: &Vec<Value>) -> i32 {
+            let msg = format!("var stack:{:?}", self.ctx().var_stack);
+            self.ctx_log(&msg);
+            0
         }
     }
     impl<T: IContextHelper> IContext for T {
@@ -670,14 +898,16 @@ mod context {
                 "_call" => self._call(values),
                 "_call_inline" => self._call_inline(values),
                 "_scope" => self._scope(values),
+                "_while" => self._while(values),
                 "_log" => self._log(values),
                 "_assert" => self._assert(values),
+                "_debug" => self._debug(values),
                 _ => {
-                    let args: Vec<_> = values.iter().map(|e| e.to_i32(self)).collect();
+                    let args = values.to_i32_vec(self);
                     match self.ctx().fn_name.get(func).map(|e| *e) {
                         Some(fid) => self.fn_call(fid, args),
                         None => {
-                            unreachable!()
+                            unreachable!("unknown function: {}", func);
                         }
                     }
                 }
@@ -693,62 +923,134 @@ mod context {
             if let Some(fid) = self.ctx_ref().fn_name.get(ident) {
                 return *fid;
             }
-            unimplemented!()
+            if let Some(vec) = self.ctx_ref().var_stack.get(ident) {
+                let age = self.ctx_ref().pointer;
+                if let Some(frame) = vec.iter().rev().find(|frame| frame.age <= age) {
+                    return frame.value;
+                }
+            }
+            0
         }
 
-        fn ident_set(&mut self, _ident: &str, _value: i32) -> i32 {
-            todo!()
+        fn ident_set(&mut self, ident: &str, value: i32) {
+            if let Some(FnFrame { func, args }) = self.ctx().fn_stack.last_mut() {
+                if let Some(idx) = func.params.get(ident) {
+                    let idx = *idx as usize;
+                    for _ in args.len()..=idx {
+                        args.push(0);
+                    }
+                    args[idx] = value;
+                    return;
+                }
+            }
+            let ctx = self.ctx();
+            let age = ctx.pointer;
+            let frames = ctx.var_stack.entry(ident.to_string()).or_insert(vec![]);
+            while let Some(frame) = frames.last_mut() {
+                if frame.age > age {
+                    frames.pop();
+                } else if frame.age == age {
+                    frame.value = value;
+                    return;
+                } else {
+                    break;
+                }
+            }
+            frames.push(VarFrame { age, value });
+        }
+    }
+
+    trait IValueVec<T> {
+        fn to_i32_vec(&self, ctx: &mut T) -> Vec<i32>;
+    }
+    impl<T: IContext, V: IValue<T>> IValueVec<T> for [V] {
+        fn to_i32_vec(&self, ctx: &mut T) -> Vec<i32> {
+            self.iter().map(|v| v.to_i32(ctx)).collect()
+        }
+    }
+
+    #[derive(Default)]
+    pub struct DemoContext {
+        ctx: ContextHelper,
+    }
+    impl DemoContext {
+        pub fn exec(&mut self, str: &str) {
+            let v = Value::parse_str(str).unwrap().to_i32(self);
+            println!("exec_value_is: {}", v);
+        }
+    }
+    impl IContextHelper for DemoContext {
+        fn ctx(&mut self) -> &mut ContextHelper {
+            &mut self.ctx
+        }
+
+        fn ctx_ref(&self) -> &ContextHelper {
+            &self.ctx
+        }
+
+        fn ctx_log(&self, msg: &str) {
+            println!("{}", msg);
         }
     }
 
     #[cfg(test)]
     mod tests {
         use super::*;
-
         #[test]
         fn test() {
-            #[derive(Default)]
-            struct DemoContext {
-                ctx: ContextHelper,
-            }
-            impl IContextHelper for DemoContext {
-                fn ctx(&mut self) -> &mut ContextHelper {
-                    &mut self.ctx
-                }
-
-                fn ctx_ref(&self) -> &ContextHelper {
-                    &self.ctx
-                }
-
-                fn ctx_log(&self, msg: String) {
-                    println!("{}", msg);
-                }
-            }
-            let mut demo = DemoContext::default();
-            let ctx = &mut demo;
-            println!(
-                "{}",
-                Value::parse_str(
-                    r"(
+            let mut ctx = DemoContext::default();
+            //条件
+            ctx.exec(
+                "(
+            _assert(_if(1,2,3)==2),
+            _assert(_if(-1,2,3)==3),
+            )",
+            );
+            //函数
+            ctx.exec(
+                "(
             _fn(add,a+b,a,b),
             _assert(add(1)==1),
             _assert(add(1,2)==3),
-            _assert(_call(add,1,2)==3),
-            _assert(_if(1,2,3)==2),
-            _assert(_if(-1,2,3)==3),
+            _assert(_call(add,1,2)==3)
+            )",
+            );
+            //循环
+            ctx.exec(
+                "_log(_while,
+            i=10,
+            _while(i<100000,
+                _if(i%10000==0,_log(i_is,i)),
+                i+=1,
+                i
+            )
+            )",
+            );
+            //递归
+            ctx.exec(
+                "(
             _fn(fib1,_if(n<2,a2,fib1(n-1,a2,a1+a2)),n,a1,a2),
             _fn(fib,fib1(n,1,1),n),
             _log(fib,fib(0),fib(1),fib(2),fib(3),fib(10),fib(19)),
             _assert(6765==fib(19))
-            )"
-                )
-                .unwrap()
-                .to_i32(ctx)
+            )",
+            );
+            //作用域
+            ctx.exec(
+                "(
+            _scope(a=100,_assert(a==100)),
+            _scope(a=100,_scope(_assert(a==100))),
+            _scope(a=100,a=200,_assert(a==200)),
+            _scope(a=100,_scope(a=200),_assert(a==100)),
+            _fn(f1,_assert(a==0)),
+            _scope(a=100,_fn(f1,_assert(a==100))),
+            _scope(a=100,_fn(f1,(a=200,_assert(a==200))),_assert(a==100))
+            )",
             );
         }
     }
 }
 
+pub use context::{ContextHelper, DemoContext, IContextHelper};
 use std::sync::Arc;
-pub use context::{ContextHelper, IContextHelper};
 pub use valuer::{IContext, IValue};

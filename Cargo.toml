@@ -2,6 +2,9 @@
 name = "value-expr"
 version = "0.1.0"
 edition = "2021"
+authors = ["ukuq"]
+description = "easy expression"
+repository = "https://github.com/ukuq/value-expr"
 
 [dependencies]
 syn = "2.0.99"
