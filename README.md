@@ -5,12 +5,13 @@ Easy expression.
 
 ```rust
 fn demo() {
-    let mut ctx = DemoContext::default();
+    let mut ctx = ContextHelper::default();
+
     //条件
     ctx.exec(
         "(
             _assert(_if(1,2,3)==2),
-            _assert(_if(-1,2,3)==3),
+            _assert(_if(-1>0,2,3)==3),
             )",
     );
     //函数
@@ -45,7 +46,7 @@ fn demo() {
     //作用域
     ctx.exec(
         "(
-            _scope(a=100,_assert(a==100)),
+            _scope(a=100,_log(a,a),_assert(a==100)),
             _scope(a=100,_scope(_assert(a==100))),
             _scope(a=100,a=200,_assert(a==200)),
             _scope(a=100,_scope(a=200),_assert(a==100)),
