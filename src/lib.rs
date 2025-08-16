@@ -66,7 +66,7 @@
 //!
 //! If you're unsure about operator precedence, use parentheses to explicitly enforce the desired evaluation order.
 //!
-//! When mixing numerical and logical operations, any numeric value greater than 0 is considered true, otherwise false.
+//! When mixing numerical and logical operations, any numeric value not 0 is considered true, otherwise false.
 //! The logical value true corresponds to 1 numerically, while false corresponds to 0.
 //!
 //! | Operator | Remark |
