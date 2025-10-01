@@ -97,6 +97,6 @@ mod data;
 mod parser;
 mod valuer;
 
-pub use context::{ContextHelper, ContextHolder};
+pub use context::ContextHelper;
 pub use data::{AssignOp, BinOp, UnOp, Value};
 pub use valuer::{Context, Valued};
